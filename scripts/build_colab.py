@@ -109,6 +109,10 @@ def render(tier: str) -> dict:
         code(
             "import os\n"
             f'os.environ["COMPUTE_TIER"] = "{tier}"\n'
+            "# Unsloth requires a single GPU. On multi-GPU environments (e.g. Kaggle T4 x 2), isolate device 0:\n"
+            'os.environ["CUDA_VISIBLE_DEVICES"] = "0"\n'
+            "# Prevent PyTorch CUDA memory fragmentation on 16GB GPUs:\n"
+            'os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"\n'
             "# NB4 judges automatically with a panel of two local reward models (no key needed).\n"
             "# Optional API judge as a cross-check (two A/B orders):\n"
             '# os.environ["JUDGE_PROVIDER"] = "gemini"   # or "openai" / "anthropic"\n'

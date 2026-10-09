@@ -52,16 +52,65 @@ def read_json(path: Path, problems: list[str]) -> dict | list | None:
         return None
 
 
+def is_sft_reference(value: str) -> bool:
+    """Accept a portable or Colab path ending in models/sft-merged.
+
+    Adapter metadata records the path used during the GPU run. Requiring that
+    absolute path to equal the current checkout makes a valid Colab/Kaggle
+    artifact fail as soon as it is downloaded or the repository is moved.
+    """
+    parts = Path(value).parts
+    return len(parts) >= 2 and tuple(parts[-2:]) == ("models", "sft-merged")
+
+
+def check_preference_data(problems: list[str]) -> None:
+    """Validate that NB2 contains real conversational rows, not shape-only fixtures."""
+    pref = REPO / "data" / "pref"
+    train_path, eval_path = pref / "train.parquet", pref / "eval.parquet"
+    if not need(train_path, "preference train split (NB2)", problems):
+        return
+    if not need(eval_path, "held-out preference split (NB2)", problems):
+        return
+    try:
+        import pyarrow.parquet as pq
+
+        train = pq.read_table(train_path).to_pylist()
+        heldout = pq.read_table(eval_path).to_pylist()
+    except Exception as exc:
+        problems.append(f"CORRUPT  data/pref parquet: {type(exc).__name__}: {exc}")
+        return
+    if len(train) < 800 or len(heldout) < 100:
+        problems.append(
+            f"TOO FEW  preference rows: train={len(train)}, held-out={len(heldout)} (need at least 800/100)"
+        )
+        return
+    required = {"prompt", "chosen", "rejected", "chat_template_kwargs"}
+    missing = required - set(train[0])
+    if missing:
+        problems.append(f"SCHEMA   data/pref is missing conversational columns: {sorted(missing)}")
+        return
+    try:
+        sys.path.insert(0, str(REPO))
+        from lab22.data import assert_disjoint, message_text
+
+        assert_disjoint(train, heldout)
+        for row in (train[0], train[-1], heldout[0], heldout[-1]):
+            message_text(row["prompt"])
+            message_text(row["chosen"])
+            message_text(row["rejected"])
+    except (AssertionError, KeyError, TypeError, ValueError) as exc:
+        problems.append(f"INVALID  data/pref conversational split: {exc}")
+
+
 def check_dpo(problems: list[str], warnings: list[str]) -> None:
     adapter = REPO / "adapters" / "dpo"
     if not need(adapter / "adapter_config.json", "DPO adapter (NB3)", problems):
         return
     base = str((read_json(adapter / "adapter_config.json", problems) or {}).get("base_model_name_or_path", ""))
-    expected = (REPO / "models" / "sft-merged").resolve()
-    if not base or Path(base).resolve() != expected:
+    if not base or not is_sft_reference(base):
         problems.append(
-            f"WRONG REF  adapters/dpo was trained on {base!r}, not {rel(expected)}: the DPO reference "
-            "must be this repo's SFT model (if the repo moved, rerun NB3 here)."
+            f"WRONG REF  adapters/dpo was trained on {base!r}: the DPO reference must end in "
+            "models/sft-merged."
         )
     sys.path.insert(0, str(REPO))
     from lab22.data import split_mismatch
@@ -99,6 +148,9 @@ def check_judge(problems: list[str], warnings: list[str]) -> None:
     sanity = data.get("sanity_accuracy")
     if isinstance(sanity, (int, float)) and sanity < MIN_SANITY:
         warnings.append(f"judge sanity accuracy {sanity:.0%} < {MIN_SANITY:.0%}: discuss it in REFLECTION")
+    for name, score in (data.get("sanity") or {}).items():
+        if isinstance(score, (int, float)) and score < MIN_SANITY:
+            warnings.append(f"excluded judge {name} scored {score:.0%} < {MIN_SANITY:.0%} on Vietnamese sanity pairs")
 
 
 def check_reflection(problems: list[str]) -> None:
@@ -139,6 +191,10 @@ def optional_status() -> list[str]:
     }
     for label, path in checks.items():
         done.append(f"{'✓' if path.exists() else '·'} {label}")
+    variants_plot = REPO / "submission" / "screenshots" / "03b-variants.png"
+    variants_json = checks["NB3b variants"]
+    if variants_plot.exists() and not variants_json.exists():
+        done.append("  NB3b note: plot exists, but variants_summary.json is missing")
     if (REPO / "data" / "eval" / "deploy_meta.json").exists():
         ggufs = list(REPO.glob("gguf*/**/*.gguf"))
         done.append(f"  GGUF files: {[rel(p) for p in ggufs] or 'none found'}")
@@ -195,10 +251,10 @@ def main() -> int:
     print(f"==> Verifying submission at {REPO}\n")
     for nb in NOTEBOOKS:
         need(REPO / "notebooks" / f"{nb}.py", f"notebook {nb}", problems)
-    need(REPO / "adapters" / "sft-mini" / "adapter_config.json", "SFT adapter (NB1)", problems)
-    need(REPO / "models" / "sft-merged" / "config.json", "merged SFT model = DPO reference (NB1)", problems)
-    need(REPO / "data" / "pref" / "train.parquet", "preference train split (NB2)", problems)
-    need(REPO / "data" / "pref" / "eval.parquet", "held-out preference split (NB2)", problems)
+    # SFT/merged weights are intentionally gitignored and the handout asks
+    # students to download only adapters/dpo/*.json from hosted GPU sessions.
+    # NB1 evidence is therefore the loss plot plus NB3's reference path.
+    check_preference_data(problems)
     check_dpo(problems, warnings)
     check_judge(problems, warnings)
     check_reflection(problems)

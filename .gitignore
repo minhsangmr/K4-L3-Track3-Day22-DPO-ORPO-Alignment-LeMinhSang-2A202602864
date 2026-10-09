@@ -26,6 +26,8 @@ adapters/*/*
 !adapters/*/grpo_metrics.json
 data/pref/*
 !data/pref/*.parquet
+!data/pref/stats.json
+!data/pref/provenance.json
 data/eval/*
 !data/eval/*.json
 !data/eval/*.jsonl
@@ -43,6 +45,9 @@ hf_cache/
 .env
 .env.local
 *.token
+
+# Local LMS export; requirements are reflected in the committed report/code.
+vlearn.txt
 
 # Editor / OS
 .DS_Store

@@ -59,7 +59,7 @@ def generate(
     tokenizer,
     prompts: list[str],
     max_new_tokens: int = C.GEN_MAX_NEW_TOKENS,
-    batch_size: int = 8,
+    batch_size: int = 4,
 ) -> list[str]:
     """Greedy, batched generation for single-turn user prompts."""
     import torch

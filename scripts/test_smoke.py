@@ -48,3 +48,13 @@ def test_colab_bundles_are_valid_and_current():
     for tier, path in (("T4", "Lab22_DPO_T4.ipynb"), ("BIGGPU", "Lab22_DPO_BigGPU.ipynb")):
         on_disk = json.loads((REPO / "colab" / path).read_text(encoding="utf-8"))
         assert on_disk == render(tier), f"colab/{path} is stale: run `make colab`"
+
+
+def test_sft_reference_path_is_portable():
+    from verify import is_sft_reference
+
+    assert is_sft_reference("models/sft-merged")
+    assert is_sft_reference("/content/lab22/models/sft-merged")
+    assert is_sft_reference("/tmp/another-checkout/models/sft-merged")
+    assert not is_sft_reference("unsloth/Qwen3-4B-Instruct-2507-unsloth-bnb-4bit")
+    assert not is_sft_reference("models/base")

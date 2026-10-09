@@ -52,4 +52,5 @@ ignore = ["B905"]
 [tool.ruff.lint.per-file-ignores]
 # Notebooks import per cell after the ROOT bootstrap.
 "notebooks/*.py" = ["E402", "E501", "I001"]  # `import unsloth` must stay before torch/trl
+"notebooks/*.ipynb" = ["E402", "E501", "I001"]
 "scripts/*.py" = ["E402"]
